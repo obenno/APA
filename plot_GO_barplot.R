@@ -1,6 +1,7 @@
 #! /usr/bin/Rscript
 
-                                        # This script is to plot bar plot of GO enrichment
+# This script is to plot bar plot of GO enrichment
+# The input is plantTFdb GO enrichment result
 
 library(ggplot2)
 library(dplyr)
@@ -17,10 +18,9 @@ go2 <- data.frame(GOterms=paste(go2[,1]," (",go2[,2],")",sep=""),
 
 go2$Pvalue <- as.numeric(go2$Pvalue)
 go2$Pvalue <- -log10(go2$Pvalue)
-#head(go2)
+
 go2$Aspect <- factor(go2$Aspect, levels = c("P", "F", "C"))
-#head(go2)
-#str(go2)
+
 go2 <- arrange(go2, Aspect, Pvalue)
 
 go2$GOterms <- as.character(go2$GOterms)
