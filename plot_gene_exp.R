@@ -55,18 +55,23 @@ geneTrack <- GeneRegionTrack(gmx_TxDb, name = "Genes",
 #Fst.gr <- makeGRangesFromDataFrame(Fst.data, seqnames.field = "CHROM", start.field = "BIN_START", end.field = "BIN_END", keep.extra.columns = T)
 #Fst.track <- DataTrack(range = Fst.gr, type = "p", name = "Fst", ylim=c(0,0.8))
 inputFile <- unlist(strsplit(opt$options$bam, ","))
-print(inputFile)
+#print(inputFile)
 expTracks <- list()
 for(i in inputFile){
-    newTrack <- AlignmentsTrack(range = i,
-                                name = i)
+    newTrack <- AlignmentsTrack(range = i, name = i,
+                                isPaired = TRUE)
     expTracks <- c(expTracks, newTrack)
 }
 
-pdf(opt$options$out, height=5, width=7)
-plotTracks(c(expTracks, genomeTrack, geneTrack),
+#pdf(opt$options$out, height=5, width=7)
+p <- plotTracks(c(expTracks, genomeTrack, geneTrack),
            chromosome = opt$options$chr,
            from= as.numeric(opt$options$start),
            to= as.numeric(opt$options$end),
-           type = "coverage")
-dev.off()
+           type = "coverage",
+           coverageHeight = 0.04,
+           minCoverageHeight = 0,
+           min.height = 0)
+#p <- p + theme_minimal
+
+ggsave(filename = opt$options$out, height=5, width=7)
