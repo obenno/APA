@@ -72,31 +72,32 @@ geneTrack <- GeneRegionTrack(gmx_TxDb, name = "Gene Model",
 #Fst.data <- cbind(Fst.data[,1:3], Fst.data[,5])
 #Fst.gr <- makeGRangesFromDataFrame(Fst.data, seqnames.field = "CHROM", start.field = "BIN_START", end.field = "BIN_END", keep.extra.columns = T)
 #Fst.track <- DataTrack(range = Fst.gr, type = "p", name = "Fst", ylim=c(0,0.8))
+if(!is.null(opt$options$bam)){
+    inputFile <- unlist(strsplit(opt$options$bam, ","))
+    ## Make expTracks
 
-inputFile <- unlist(strsplit(opt$options$bam, ","))
-
-if(!is.null(opt$options$label)){
-    sampleLabels <- unlist(strsplit(opt$options$label, ","))
-}else{
-    sampleLabels <- rep(NULL, length(inputFile))
+    if(!is.null(opt$options$label)){
+        sampleLabels <- unlist(strsplit(opt$options$label, ","))
+    }else{
+        sampleLabels <- rep(NULL, length(inputFile))
+    }
+    
+    expTracks <- list()
+    if(opt$options$mode == "exp"){
+        exp_type <- "coverage"
+    }else if(opt$options$mode == "sashimi"){
+        exp_type <- c("coverage", "sashimi")
+    }else{
+        print("mode arg must be either exp or sashimi")
+    }
+    
+    for(i in 1:length(inputFile)){
+        newTrack <- AlignmentsTrack(range = inputFile[i],
+                                    name = sampleLabels[i],
+                                    isPaired = TRUE)
+        expTracks <- c(expTracks, newTrack)
+    }
 }
-
-expTracks <- list()
-if(opt$options$mode == "exp"){
-    exp_type <- "coverage"
-}else if(opt$options$mode == "sashimi"){
-    exp_type <- c("coverage", "sashimi")
-}else{
-    print("mode arg must be either exp or sashimi")
-}
-
-for(i in 1:length(inputFile)){
-    newTrack <- AlignmentsTrack(range = inputFile[i],
-                                name = sampleLabels[i],
-                                isPaired = TRUE)
-    expTracks <- c(expTracks, newTrack)
-}
-
 
 auto_size <- function(number_of_tracks, stackHeight, number_of_transcripts){
     # Since the auto sizing funtion in Gviz is not friendly and functional
@@ -110,23 +111,30 @@ auto_size <- function(number_of_tracks, stackHeight, number_of_transcripts){
 pdf(opt$options$out,
     height=opt$options$height,
     width=opt$options$width)
-
-plotTracks(c(expTracks, genomeTrack, geneTrack),
-           chromosome = opt$options$chr,
-           from= as.numeric(opt$options$start),
-           to= as.numeric(opt$options$end),
-           type = exp_type,
-           #background.title = "white",
-           #col.axis = "lightgrey",
-           #col.title = "black",
-           coverageHeight = 0.01, # default 0.1
-           minCoverageHeight = 0, # default 50
-           sashimiHeight = 0.01, # default 0.1
-           lwd.sashimiMax = 2,  # line width of sashimi, default 10, too wide
-           minSashimiHeight = 0, # default 50
-           sashimiScore = 5, # default 1
-           stackHeight = 0.5,
-           #sashimiNumbers = TRUE,
-           sizes = auto_size(length(expTracks), 0.5, number_of_transcripts))
-           #sizes=c(rep(1, length(expTracks)), 0.6, 0.3))
+if(!is.null(opt$options$bam)){
+    plotTracks(c(expTracks, genomeTrack, geneTrack),
+               chromosome = opt$options$chr,
+               from= as.numeric(opt$options$start),
+               to= as.numeric(opt$options$end),
+               type = exp_type,
+               ##background.title = "white",
+               ##col.axis = "lightgrey",
+               ##col.title = "black",
+               coverageHeight = 0.01, # default 0.1
+               minCoverageHeight = 0, # default 50
+               sashimiHeight = 0.01, # default 0.1
+               lwd.sashimiMax = 2,  # line width of sashimi, default 10, too wide
+               minSashimiHeight = 0, # default 50
+               sashimiScore = 1, # default 1
+               stackHeight = 0.5,
+               ##sashimiNumbers = TRUE,
+               sizes = auto_size(length(expTracks), 0.5, number_of_transcripts))
+               ##sizes=c(rep(1, length(expTracks)), 0.6, 0.3))
+}else{
+    plotTracks(list(genomeTrack, geneTrack),
+               chromosome = opt$options$chr,
+               from= as.numeric(opt$options$start),
+               to= as.numeric(opt$options$end),
+               sizes = c(0.3,0.7))
+}    
 dev.off()
