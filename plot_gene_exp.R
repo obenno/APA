@@ -25,9 +25,9 @@ option.list <- list(
     make_option(c("-o", "--out"), type="character", default=NULL,
                 help="output pdf file"),
     make_option(c("--width"), type="numeric", default=7,
-                help="output file width"),
+                help="output file width [%default]"),
     make_option(c("--height"), type="numeric", default=5,
-                help="output file height"),
+                help="output file height [%default]"),
     make_option(c("--label"), type="character", default=NULL,
                 help="label of samples, could be a comma separated list [%default]")
 )
@@ -113,7 +113,11 @@ auto_size <- function(number_of_tracks, stackHeight, number_of_transcripts){
     # I write my own autosizing function with tuning sizes parameter
     track_size <- c(rep(1, number_of_tracks), 0.6)
     gTrack_size <- 0.3*stackHeight*number_of_transcripts+(1-stackHeight)*0.3
-    track_size <- c(track_size, gTrack_size)
+    if(!is.null(opt$options$ref)){
+        track_size <- c(track_size, gTrack_size, gTrack_size)
+    }else{
+        track_size <- c(track_size, gTrack_size)
+    }
     return(track_size)
 }
 
@@ -125,7 +129,7 @@ if(!is.null(opt$options$bam)){
     if(!is.null(opt$options$ref)){
         tracks <- c(tracks, expTracks, genomeTrack, refTrack, geneTrack)
     }else{
-        tracks <- c(tracks, expTracks,genomeTrack, geneTrack)
+        tracks <- c(tracks, expTracks, genomeTrack, geneTrack)
     }
     plotTracks(tracks,
                chromosome = opt$options$chr,
@@ -148,13 +152,15 @@ if(!is.null(opt$options$bam)){
 }else{
     if(!is.null(opt$options$ref)){
         tracks <- c(tracks, genomeTrack, refTrack, geneTrack)
+        noExp_size <- c(0.3,0.7,0.7)
     }else{
         tracks <- c(tracks, genomeTrack, geneTrack)
+        noExp_size <- c(0.3,0.7)
     }
     plotTracks(tracks,
                chromosome = opt$options$chr,
                from= as.numeric(opt$options$start),
                to= as.numeric(opt$options$end),
-               sizes = c(0.3,0.7))
-}    
+               sizes = noExp_size)
+}
 dev.off()
