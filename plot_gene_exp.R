@@ -8,6 +8,8 @@ args <- commandArgs(trailingOnly = T)
 
 
 option.list <- list(
+    make_option(c("-r", "--ref"), type="character", default=NULL,
+                help="Whether include reference gene model (GFF File) [%default]"),
     make_option(c("-g", "--gff"), type="character", default=NULL,
                 help="Input gene model (GFF File) [%default]"),
     make_option(c("-b", "--bam"), type="character", default=NULL,
@@ -52,6 +54,13 @@ suppressPackageStartupMessages(library(rtracklayer))
 options(ucscChromosomeNames=FALSE) # Soybean chromosome name does not stick to ucsc nameing convention
 
 # Make GRanges object of Gene Model Annotation
+if(!is.null(opt$options$ref)){
+    ref_TxDb <- makeTxDbFromGFF(opt$option$ref, format="auto")
+    refTrack <- GeneRegionTrack(ref_TxDb, name = "Ref Gene Model",
+                                fill = "#8282d2", col.line = NULL,
+                                transcriptAnnotation = "mRNA",
+                                col = NULL)
+}
 
 gmx_TxDb <- makeTxDbFromGFF(opt$options$gff, format="auto")
 
@@ -111,8 +120,14 @@ auto_size <- function(number_of_tracks, stackHeight, number_of_transcripts){
 pdf(opt$options$out,
     height=opt$options$height,
     width=opt$options$width)
+tracks <- list()
 if(!is.null(opt$options$bam)){
-    plotTracks(c(expTracks, genomeTrack, geneTrack),
+    if(!is.null(opt$options$ref)){
+        tracks <- c(tracks, expTracks, genomeTrack, refTrack, geneTrack)
+    }else{
+        tracks <- c(tracks, expTracks,genomeTrack, geneTrack)
+    }
+    plotTracks(tracks,
                chromosome = opt$options$chr,
                from= as.numeric(opt$options$start),
                to= as.numeric(opt$options$end),
@@ -131,7 +146,12 @@ if(!is.null(opt$options$bam)){
                sizes = auto_size(length(expTracks), 0.5, number_of_transcripts))
                ##sizes=c(rep(1, length(expTracks)), 0.6, 0.3))
 }else{
-    plotTracks(list(genomeTrack, geneTrack),
+    if(!is.null(opt$options$ref)){
+        tracks <- c(tracks, genomeTrack, refTrack, geneTrack)
+    }else{
+        tracks <- c(tracks, genomeTrack, geneTrack)
+    }
+    plotTracks(tracks,
                chromosome = opt$options$chr,
                from= as.numeric(opt$options$start),
                to= as.numeric(opt$options$end),
