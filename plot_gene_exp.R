@@ -29,7 +29,11 @@ option.list <- list(
     make_option(c("--height"), type="numeric", default=5,
                 help="output file height [%default]"),
     make_option(c("--label"), type="character", default=NULL,
-                help="label of samples, could be a comma separated list [%default]")
+                help="label of samples, could be a comma separated list [%default]"),
+    make_option(c("--log"), action="store_true", default=FALSE,
+                help="Whether log-transform coverage"),
+    make_option(c("--size"), type="character", default=NULL,
+                help="Whether manually input track size")
 )
 # It's sad that alignment track doesn't suppport wig or bw file, only data track
 # support, but data track doesn't support coverage style plot 
@@ -108,13 +112,17 @@ if(!is.null(opt$options$bam)){
     }
 }
 
-auto_size <- function(number_of_tracks, stackHeight, number_of_transcripts){
-    # Since the auto sizing funtion in Gviz is not friendly and functional
-    # I write my own autosizing function with tuning sizes parameter
-    track_size <- c(rep(1, number_of_tracks), 0.6)
-    gTrack_size <- 0.3*stackHeight*number_of_transcripts+(1-stackHeight)*0.3
-    if(!is.null(opt$options$ref)){
-        track_size <- c(track_size, gTrack_size, gTrack_size)
+auto_size <- function(number_of_tracks, stackHeight, number_of_transcripts, ref){
+    ## Since the auto sizing funtion in Gviz is not friendly and functional
+    ## I write my own autosizing function with tuning sizes parameter
+    track_size <- c(rep(1, number_of_tracks), 0.8)
+    gTrack_size <- 0.24*stackHeight*number_of_transcripts+(1-stackHeight)*0.24
+    if(!is.null(ref)){
+        ref_trans_num <- sum(countOverlaps(transcripts(ref_TxDb), which))
+        ratio1 <- ref_trans_num/(ref_trans_num+number_of_transcripts)
+        ratio2 <- number_of_transcripts/(ref_trans_num+number_of_transcripts)
+        gTrack_size <- gTrack_size*2
+        track_size <- c(track_size, 2*gTrack_size*ratio1, 2*gTrack_size*ratio2)
     }else{
         track_size <- c(track_size, gTrack_size)
     }
@@ -128,17 +136,44 @@ tracks <- list()
 if(!is.null(opt$options$bam)){
     if(!is.null(opt$options$ref)){
         tracks <- c(tracks, expTracks, genomeTrack, refTrack, geneTrack)
+        sizes <- auto_size(length(expTracks), 0.5, number_of_transcripts, opt$options$ref)
     }else{
         tracks <- c(tracks, expTracks, genomeTrack, geneTrack)
+        sizes <- auto_size(length(expTracks), 0.5, number_of_transcripts, opt$options$ref)
     }
-    plotTracks(tracks,
+    if(!is.null(opt$option$size)){
+        sizes <- unlist(strsplit(opt$option$size, ","))
+        sizes <- as.numeric(sizes)
+    }
+    message("Track sizes are ", sizes)
+    if(opt$options$log){
+        plotTracks(tracks,
+                   chromosome = opt$options$chr,
+                   from= as.numeric(opt$options$start),
+                   to= as.numeric(opt$options$end),
+                   type = exp_type,
+                   ##background.title = "white",
+                   ##col.axis = "lightgrey",
+                   ##col.title = "black",
+                   coverageHeight = 0.01, # default 0.1
+                   minCoverageHeight = 0, # default 50
+                   sashimiHeight = 0.01, # default 0.1
+                   lwd.sashimiMax = 2,  # line width of sashimi, default 10, too wide
+                   minSashimiHeight = 0, # default 50
+                   sashimiScore = 1, # default 1
+                   stackHeight = 0.5,
+                   ##sashimiNumbers = TRUE,
+                   sizes = sizes,
+                   transformation = function(x){log(x+1, 2)})
+    ##sizes=c(rep(1, length(expTracks)), 0.6, 0.3))
+    }else{
+        plotTracks(tracks,
                chromosome = opt$options$chr,
                from= as.numeric(opt$options$start),
                to= as.numeric(opt$options$end),
                type = exp_type,
-               ##background.title = "white",
-               ##col.axis = "lightgrey",
-               ##col.title = "black",
+               ##sashimiNumbers=TRUE,
+               ##fontsize=8,
                coverageHeight = 0.01, # default 0.1
                minCoverageHeight = 0, # default 50
                sashimiHeight = 0.01, # default 0.1
@@ -147,8 +182,8 @@ if(!is.null(opt$options$bam)){
                sashimiScore = 1, # default 1
                stackHeight = 0.5,
                ##sashimiNumbers = TRUE,
-               sizes = auto_size(length(expTracks), 0.5, number_of_transcripts))
-               ##sizes=c(rep(1, length(expTracks)), 0.6, 0.3))
+               sizes = sizes)
+    }
 }else{
     if(!is.null(opt$options$ref)){
         tracks <- c(tracks, genomeTrack, refTrack, geneTrack)
