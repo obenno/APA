@@ -9,7 +9,7 @@ args <- commandArgs(trailingOnly = T)
 
 option.list <- list(
     make_option(c("-r", "--ref"), type="character", default=NULL,
-                help="Whether include reference gene model (GFF File) [%default]"),
+                help="label of gene tracks, could be a comma separated list [%default]"),
     make_option(c("-g", "--gff"), type="character", default=NULL,
                 help="Input gene model (GFF File) [%default]"),
     make_option(c("-b", "--bam"), type="character", default=NULL,
@@ -33,7 +33,9 @@ option.list <- list(
     make_option(c("--log"), action="store_true", default=FALSE,
                 help="Whether log-transform coverage"),
     make_option(c("--size"), type="character", default=NULL,
-                help="Whether manually input track size")
+                help="Whether manually input track size"),
+    make_option(c("--peptide"), type="character", default=NULL,
+                help="provide peptide position file for visualization")
 )
 # It's sad that alignment track doesn't suppport wig or bw file, only data track
 # support, but data track doesn't support coverage style plot 
@@ -57,30 +59,43 @@ suppressPackageStartupMessages(library(GenomicFeatures))
 suppressPackageStartupMessages(library(rtracklayer))
 options(ucscChromosomeNames=FALSE) # Soybean chromosome name does not stick to ucsc nameing convention
 
+tracks <- list()
+
 # Make GRanges object of Gene Model Annotation
-if(!is.null(opt$options$ref)){
-    ref_TxDb <- makeTxDbFromGFF(opt$option$ref, format="auto")
-    refTrack <- GeneRegionTrack(ref_TxDb, name = "Ref Gene Model",
+if(!is.null(opt$options$gff)){
+    gtf_File <- unlist(strsplit(opt$options$gff, ","))
+    if(!is.null(opt$options$ref)){
+        geneLabels <- unlist(strsplit(opt$options$ref, ","))
+    }else{
+        geneLabels <- rep(NULL, length(gtf_File))
+    }
+    geneTracks <- list()
+    for(i in 1:length(gtf_File)){
+        gene_TxDb <- makeTxDbFromGFF(gtf_File[i], format="auto")
+        gTrack <- GeneRegionTrack(gene_TxDb, name = geneLabels[i],
                                 fill = "#8282d2", col.line = NULL,
                                 transcriptAnnotation = "mRNA",
                                 col = NULL)
+        geneTracks[[i]] <- gTrack
+    }
+}else{
+    stop("Please provide at least one gff/gtf file.")
 }
 
-gmx_TxDb <- makeTxDbFromGFF(opt$options$gff, format="auto")
 
-loci <- paste(opt$options$chr, ":",
-              opt$options$start-1000, "-",
-              opt$options$end+1000, sep="")
-
-which <- GRanges(loci)
-number_of_transcripts <- sum(countOverlaps(transcripts(gmx_TxDb), which))
-#gmx_gr <- import(con = opt$options$gff)
-#gmx_db <- makeTxDbFromGRanges(gmx_gr)
+##loci <- paste(opt$options$chr, ":",
+##              opt$options$start-1000, "-",
+##              opt$options$end+1000, sep="")
+##
+##which <- GRanges(loci)
+##number_of_transcripts <- sum(countOverlaps(transcripts(gmx_TxDb), which))
+##gmx_gr <- import(con = opt$options$gff)
+##gmx_db <- makeTxDbFromGRanges(gmx_gr)
 genomeTrack <- GenomeAxisTrack() # Position Ruler Track
-geneTrack <- GeneRegionTrack(gmx_TxDb, name = "Gene Model",
-                             fill = "#8282d2", col.line = NULL,
-                             transcriptAnnotation = "transcript",
-                             col = NULL)
+##geneTrack <- GeneRegionTrack(gmx_TxDb, name = "Gene Model",
+##                             fill = "#8282d2", col.line = NULL,
+##                             transcriptAnnotation = "transcript",
+##                             col = NULL)
 #Fst.data <- read.table(opt$options$fst, header=T)
 #Fst.data <- cbind(Fst.data[,1:3], Fst.data[,5])
 #Fst.gr <- makeGRangesFromDataFrame(Fst.data, seqnames.field = "CHROM", start.field = "BIN_START", end.field = "BIN_END", keep.extra.columns = T)
@@ -110,70 +125,71 @@ if(!is.null(opt$options$bam)){
                                     isPaired = TRUE)
         expTracks <- c(expTracks, newTrack)
     }
+    tracks <- c(tracks, expTracks)
 }
 
-auto_size <- function(number_of_tracks, stackHeight, number_of_transcripts, ref){
-    ## Since the auto sizing funtion in Gviz is not friendly and functional
-    ## I write my own autosizing function with tuning sizes parameter
-    track_size <- c(rep(1, number_of_tracks), 0.8)
-    gTrack_size <- 0.24*stackHeight*number_of_transcripts+(1-stackHeight)*0.24
-    if(!is.null(ref)){
-        ref_trans_num <- sum(countOverlaps(transcripts(ref_TxDb), which))
-        ratio1 <- ref_trans_num/(ref_trans_num+number_of_transcripts)
-        ratio2 <- number_of_transcripts/(ref_trans_num+number_of_transcripts)
-        gTrack_size <- gTrack_size*2
-        track_size <- c(track_size, 2*gTrack_size*ratio1, 2*gTrack_size*ratio2)
-    }else{
-        track_size <- c(track_size, gTrack_size)
-    }
-    return(track_size)
+tracks <- c(tracks, genomeTrack, geneTracks)
+
+### Disable auto size
+
+##auto_size <- function(number_of_tracks, stackHeight, number_of_transcripts, ref){
+##    ## Since the auto sizing funtion in Gviz is not friendly and functional
+##    ## I write my own autosizing function with tuning sizes parameter
+##    track_size <- c(rep(1, number_of_tracks), 0.8)
+##    gTrack_size <- 0.24*stackHeight*number_of_transcripts+(1-stackHeight)*0.24
+##    if(!is.null(ref)){
+##        ref_trans_num <- sum(countOverlaps(transcripts(ref_TxDb), which))
+##        ratio1 <- ref_trans_num/(ref_trans_num+number_of_transcripts)
+##        ratio2 <- number_of_transcripts/(ref_trans_num+number_of_transcripts)
+##        gTrack_size <- gTrack_size*2
+##        track_size <- c(track_size, 2*gTrack_size*ratio1, 2*gTrack_size*ratio2)
+##    }else{
+##        track_size <- c(track_size, gTrack_size)
+##    }
+##    return(track_size)
+##}
+
+if(opt$options$log){
+    transform_function <- function(x){log(x+1, 2)}
+}else{
+    transform_function <- function(x){x}
 }
+
+if(!is.null(opt$options$size)){
+    sizes <- unlist(strsplit(opt$option$size, ","))
+    sizes <- as.numeric(sizes)
+}else{
+    sizes <- c(rep(0.8, length(expTracks)), 0.6, rep(1, length(geneTracks)))
+}
+
+if(!is.null(opt$options$peptide)){
+    if(is.null(opt$options$size)){
+        sizes <- c(sizes, 0.8)
+    }
+    peptide <- read.table(opt$options$peptide, header=T)
+    peptide$feature <- as.character(peptide$feature)
+    pepTrack <- GeneRegionTrack(peptide, name = "Peptides",
+                                col.line = NULL, col = NULL,
+                                fill = "#fdb863",
+                                transcriptAnnotation="symbol")
+    tracks <- c(tracks, pepTrack)
+}
+
 
 pdf(opt$options$out,
     height=opt$options$height,
     width=opt$options$width)
-tracks <- list()
+
 if(!is.null(opt$options$bam)){
-    if(!is.null(opt$options$ref)){
-        tracks <- c(tracks, expTracks, genomeTrack, refTrack, geneTrack)
-        sizes <- auto_size(length(expTracks), 0.5, number_of_transcripts, opt$options$ref)
-    }else{
-        tracks <- c(tracks, expTracks, genomeTrack, geneTrack)
-        sizes <- auto_size(length(expTracks), 0.5, number_of_transcripts, opt$options$ref)
-    }
-    if(!is.null(opt$option$size)){
-        sizes <- unlist(strsplit(opt$option$size, ","))
-        sizes <- as.numeric(sizes)
-    }
     message("Track sizes are ", sizes)
-    if(opt$options$log){
-        plotTracks(tracks,
-                   chromosome = opt$options$chr,
-                   from= as.numeric(opt$options$start),
-                   to= as.numeric(opt$options$end),
-                   type = exp_type,
-                   ##background.title = "white",
-                   ##col.axis = "lightgrey",
-                   ##col.title = "black",
-                   coverageHeight = 0.01, # default 0.1
-                   minCoverageHeight = 0, # default 50
-                   sashimiHeight = 0.01, # default 0.1
-                   lwd.sashimiMax = 2,  # line width of sashimi, default 10, too wide
-                   minSashimiHeight = 0, # default 50
-                   sashimiScore = 1, # default 1
-                   stackHeight = 0.5,
-                   ##sashimiNumbers = TRUE,
-                   sizes = sizes,
-                   transformation = function(x){log(x+1, 2)})
-    ##sizes=c(rep(1, length(expTracks)), 0.6, 0.3))
-    }else{
-        plotTracks(tracks,
+    plotTracks(tracks,
                chromosome = opt$options$chr,
                from= as.numeric(opt$options$start),
                to= as.numeric(opt$options$end),
                type = exp_type,
-               ##sashimiNumbers=TRUE,
-               ##fontsize=8,
+               ##background.title = "white",
+               ##col.axis = "lightgrey",
+               ##col.title = "black",
                coverageHeight = 0.01, # default 0.1
                minCoverageHeight = 0, # default 50
                sashimiHeight = 0.01, # default 0.1
@@ -182,20 +198,14 @@ if(!is.null(opt$options$bam)){
                sashimiScore = 1, # default 1
                stackHeight = 0.5,
                ##sashimiNumbers = TRUE,
-               sizes = sizes)
-    }
+               sizes = sizes,
+               transformation = transform_function)
+    
 }else{
-    if(!is.null(opt$options$ref)){
-        tracks <- c(tracks, genomeTrack, refTrack, geneTrack)
-        noExp_size <- c(0.3,0.7,0.7)
-    }else{
-        tracks <- c(tracks, genomeTrack, geneTrack)
-        noExp_size <- c(0.3,0.7)
-    }
     plotTracks(tracks,
                chromosome = opt$options$chr,
                from= as.numeric(opt$options$start),
                to= as.numeric(opt$options$end),
-               sizes = noExp_size)
+               sizes = sizes)
 }
 dev.off()
