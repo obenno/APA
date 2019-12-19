@@ -11,7 +11,7 @@ option.list <- list(
     make_option(c("-r", "--ref"), type="character", default=NULL,
                 help="label of gene tracks, could be a comma separated list [%default]"),
     make_option(c("-g", "--gff"), type="character", default=NULL,
-                help="Input gene model (GFF File) [%default]"),
+                help="Input gene model (GFF File), or TxDB file is also supported [%default]"),
     make_option(c("-b", "--bam"), type="character", default=NULL,
                 help="Input mapping bam file, could be a comma separated list [%default]"),
     make_option(c("-m", "--mode"), type="character", default="exp",
@@ -35,7 +35,17 @@ option.list <- list(
     make_option(c("--size"), type="character", default=NULL,
                 help="Whether manually input track size"),
     make_option(c("--peptide"), type="character", default=NULL,
-                help="provide peptide position file for visualization")
+                help="provide peptide position file for visualization"),
+    make_option(c("--PAS"), type="character", default=NULL,
+                help="provide PAS bed file for visualization"),
+    make_option(c("--PSI"), type="character", default=NULL,
+                help="provide PSI data for visualization"),
+    make_option(c("--Trans"), type="character", default=NULL,
+                help="provide transcript ID to extract PSI data"),
+    make_option(c("--Tissue"), type="character", default=NULL,
+                help="provide tissue to extract PSI data"),
+    make_option(c("--color"), type="character", default=NULL,
+                help="set color of gene tracks, could be a comma separated list [%default]")
 )
 # It's sad that alignment track doesn't suppport wig or bw file, only data track
 # support, but data track doesn't support coverage style plot 
@@ -57,30 +67,70 @@ suppressPackageStartupMessages(library(Gviz))
 suppressPackageStartupMessages(library(GenomicRanges))
 suppressPackageStartupMessages(library(GenomicFeatures))
 suppressPackageStartupMessages(library(rtracklayer))
+suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(ggplotify))
+suppressPackageStartupMessages(library(cowplot))
+suppressPackageStartupMessages(library(tidyverse))
 options(ucscChromosomeNames=FALSE) # Soybean chromosome name does not stick to ucsc nameing convention
+
+## Modify scheme
+customScheme <- getScheme()
+customScheme$GeneRegionTrack$fill <- "#8282d2"
+customScheme$GeneRegionTrack$col <- NULL
+customScheme$GeneRegionTrack$background.title <- "transparent"
+customScheme$AnnotationTrack$background.title <- "transparent"
+customScheme$AlignmentsTrack$background.title <- "transparent"
+addScheme(customScheme, "customScheme")
+options(Gviz.scheme="customScheme")
 
 tracks <- list()
 
 # Make GRanges object of Gene Model Annotation
 if(!is.null(opt$options$gff)){
     gtf_File <- unlist(strsplit(opt$options$gff, ","))
-    if(!is.null(opt$options$ref)){
-        geneLabels <- unlist(strsplit(opt$options$ref, ","))
-    }else{
-        geneLabels <- rep(NULL, length(gtf_File))
-    }
-    geneTracks <- list()
-    for(i in 1:length(gtf_File)){
-        gene_TxDb <- makeTxDbFromGFF(gtf_File[i], format="auto")
-        gTrack <- GeneRegionTrack(gene_TxDb, name = geneLabels[i],
-                                fill = "#8282d2", col.line = NULL,
-                                transcriptAnnotation = "mRNA",
-                                col = NULL)
-        geneTracks[[i]] <- gTrack
-    }
 }else{
     stop("Please provide at least one gff/gtf file.")
 }
+## First set colors for multiple GeneRegionTrack
+if(!is.null(opt$options$color)){
+    geneColor <- unlist(strsplit(opt$option$color, ","))
+    if(length(geneColor)!=length(gtf_File)){
+        stop("Color number is not equal to gtf number")
+    }
+}else{
+    geneColor <- rep("#8282d2", length(gtf_File))
+}
+
+
+if(!is.null(opt$options$ref)){
+    geneLabels <- unlist(strsplit(opt$options$ref, ","))
+}else{
+    geneLabels <- rep(NULL, length(gtf_File))
+}
+geneTracks <- list()
+for(i in 1:length(gtf_File)){
+    if(str_detect(gtf_File[i], "\\.sqlite$")){
+        gene_TxDb <- loadDb(gtf_File[i])
+    }else if(str_detect(gtf_File[i], "\\.(gtf|gff3)$")){
+        gene_TxDb <- makeTxDbFromGFF(gtf_File[i], format="auto")
+    }else{
+        stop("Please provide GTF/GFF file as input.")
+    }
+    ## Extract intron for assembled dataset
+    if(i==length(gtf_File)){
+            introns <- unlist(intronsByTranscript(gene_TxDb))
+    }        
+    gTrack <- GeneRegionTrack(gene_TxDb, name = geneLabels[i],
+                              fill = geneColor[i], col.line = NULL,
+                              transcriptAnnotation = "mRNA",
+                              showTitle = FALSE, alpha.title=0,
+                              col.border.title="transparent",
+                              col = NULL)
+    geneTracks[[i]] <- gTrack
+    
+}
+message("Finished load GTF...")
+
 
 
 ##loci <- paste(opt$options$chr, ":",
@@ -127,9 +177,27 @@ if(!is.null(opt$options$bam)){
     }
     tracks <- c(tracks, expTracks)
 }
+message("Finished adding alignment tracks...")
 
-tracks <- c(tracks, genomeTrack, geneTracks)
-
+if(!is.null(opt$options$PAS)){
+    if(is.null(opt$options$size)){
+        sizes <- c(sizes, 0.2)
+    }
+    PAS <- read.table(opt$options$PAS, header = F)
+    colnames(PAS) <- c("chr","start",
+                       "end", "id", "col5", "strand")
+    PAS_Track <- AnnotationTrack(start=PAS$start, width=15,
+                                 chromosome=PAS$chr,
+                                 strand=PAS$strand, group=PAS$id,
+                                 name = "PAS",
+                                 col.line = NULL, col = NULL,
+                                 fill = "#7fbf7b",
+                                 stacking="dense")
+    tracks <- c(tracks, genomeTrack, PAS_Track, geneTracks)
+    message("Added PAS track...")
+}else{
+    tracks <- c(tracks, genomeTrack, geneTracks)
+}
 ### Disable auto size
 
 ##auto_size <- function(number_of_tracks, stackHeight, number_of_transcripts, ref){
@@ -176,36 +244,72 @@ if(!is.null(opt$options$peptide)){
 }
 
 
-pdf(opt$options$out,
-    height=opt$options$height,
-    width=opt$options$width)
-
 if(!is.null(opt$options$bam)){
     message("Track sizes are ", sizes)
-    plotTracks(tracks,
-               chromosome = opt$options$chr,
-               from= as.numeric(opt$options$start),
-               to= as.numeric(opt$options$end),
-               type = exp_type,
-               ##background.title = "white",
-               ##col.axis = "lightgrey",
-               ##col.title = "black",
-               coverageHeight = 0.01, # default 0.1
-               minCoverageHeight = 0, # default 50
-               sashimiHeight = 0.01, # default 0.1
-               lwd.sashimiMax = 2,  # line width of sashimi, default 10, too wide
-               minSashimiHeight = 0, # default 50
-               sashimiScore = 1, # default 1
-               stackHeight = 0.5,
-               ##sashimiNumbers = TRUE,
-               sizes = sizes,
-               transformation = transform_function)
+    f <- function() {
+        plotTracks(tracks,
+                   chromosome = opt$options$chr,
+                   from= as.numeric(opt$options$start),
+                   to= as.numeric(opt$options$end),
+                   type = exp_type,
+                   ##background.title = "white",
+                   ##col.axis = "lightgrey",
+                   ##col.title = "black",
+                   coverageHeight = 0.01, # default 0.1
+                   minCoverageHeight = 0, # default 50
+                   sashimiHeight = 0.01, # default 0.1
+                   lwd.sashimiMax = 2,  # line width of sashimi, default 10, too wide
+                   minSashimiHeight = 0, # default 50
+                   sashimiScore = 5, # default 1
+                   stackHeight = 0.5,
+                   background.title = "transparent",
+                   col.axis= "black",
+                   col.title="black",
+                   fontcolor="black",
+                   fontface.title=2,
+                   fontsize.title=10,
+                   rotation.title=90,
+                   sashimiFilter=introns,
+                   ##sashimiNumbers = TRUE,
+                   sizes = sizes,
+                   transformation = transform_function)
+    }
+    p1 <- as.ggplot(f)
     
 }else{
-    plotTracks(tracks,
-               chromosome = opt$options$chr,
-               from= as.numeric(opt$options$start),
-               to= as.numeric(opt$options$end),
-               sizes = sizes)
+    f <- function() {
+        plotTracks(tracks,
+                   chromosome = opt$options$chr,
+                   from= as.numeric(opt$options$start),
+                   to= as.numeric(opt$options$end),
+                   sizes = sizes)
+    }
+    p1 <- as.ggplot(f)
 }
-dev.off()
+p1 <-  p1 + theme(plot.margin= margin(0,0,0,0, "mm"))
+message("Finishe major plot...")
+
+if(!is.null(opt$options$PSI)){
+    PSI <- read.table(file=opt$options$PSI, header = T)
+    PSI <- PSI %>%
+        filter(Trans==opt$options$Trans,
+               Tissue==opt$options$Tissue) %>%
+        mutate(Sample=factor(Sample, levels=c("0h","1h","2h","4h","24h","48h")))
+    p2 <- ggplot(PSI, aes(x=Sample, y=PSI, ymin=down, ymax=up))
+    p2 <- p2 + geom_errorbar(width=0.25) + geom_point(shape=21, size=4, fill="white")
+    p2 <- p2 + scale_x_discrete(limits=rev(levels(PSI$Sample))) + coord_flip()
+    p2 <- p2 + theme_classic() + xlab("") + theme(axis.text.y=element_blank())
+
+    right_up <- sum(sizes[1:6])
+    right_down <- sum(sizes)-sum(sizes[1:6])
+
+    ## Align by x axis
+    plots <- align_plots(p1, p2, align = "h", axis="bt")
+    right_p <- plot_grid(plots[[2]], NULL, ncol = 1, rel_heights = c(right_up,right_down))
+    p <- plot_grid(plots[[1]], right_p, nrow = 1, rel_widths = c(5,1))
+}else{
+    p <- p1
+}
+p <- p + theme(plot.margin=unit(c(0,0,0,0),"mm"))
+ggsave(p, file=opt$options$out,
+       width=opt$options$width, height=opt$options$height)
